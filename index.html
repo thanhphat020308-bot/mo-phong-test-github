@@ -1,0 +1,92 @@
+"""
+Con lắc kép (Double Pendulum) - hệ hỗn loạn kinh điển.
+Phương trình chuyển động từ Lagrangian, tích phân bằng RK4.
+"""
+
+import numpy as np
+
+
+class DoublePendulum:
+    """
+    Hai thanh nối tiếp, khối lượng m1, m2, chiều dài l1, l2.
+    Trạng thái: [theta1, omega1, theta2, omega2]
+    """
+
+    def __init__(
+        self,
+        m1: float = 1.0,
+        m2: float = 1.0,
+        l1: float = 1.0,
+        l2: float = 1.0,
+        g: float = 9.81,
+        dt: float = 0.005,
+    ):
+        self.m1, self.m2 = m1, m2
+        self.l1, self.l2 = l1, l2
+        self.g = g
+        self.dt = dt
+        self.state = np.zeros(4)
+
+    def reset(self, theta1=None, theta2=None) -> np.ndarray:
+        """Reset với góc ban đầu (mặc định gần thẳng đứng)."""
+        t1 = theta1 if theta1 is not None else np.pi / 2 + 0.01
+        t2 = theta2 if theta2 is not None else np.pi / 2
+        self.state = np.array([t1, 0.0, t2, 0.0])
+        return self.state.copy()
+
+    def dynamics(self, s: np.ndarray) -> np.ndarray:
+        """Đạo hàm trạng thái - phương trình Lagrangian."""
+        t1, w1, t2, w2 = s
+        d = t1 - t2
+        den = 2 * self.m1 + self.m2 - self.m2 * np.cos(2 * d)
+
+        a1 = (
+            -self.g * (2 * self.m1 + self.m2) * np.sin(t1)
+            - self.m2 * self.g * np.sin(t1 - 2 * t2)
+            - 2 * np.sin(d) * self.m2
+            * (w2 ** 2 * self.l2 + w1 ** 2 * self.l1 * np.cos(d))
+        ) / (self.l1 * den)
+
+        a2 = (
+            2 * np.sin(d) * (
+                w1 ** 2 * self.l1 * (self.m1 + self.m2)
+                + self.g * (self.m1 + self.m2) * np.cos(t1)
+                + w2 ** 2 * self.l2 * self.m2 * np.cos(d)
+            )
+        ) / (self.l2 * den)
+
+        return np.array([w1, a1, w2, a2])
+
+    def step(self, substeps: int = 4) -> np.ndarray:
+        """Tiến 1 bước dt, chia nhỏ substeps để ổn định."""
+        h = self.dt / substeps
+        s = self.state
+        for _ in range(substeps):
+            k1 = self.dynamics(s)
+            k2 = self.dynamics(s + h / 2 * k1)
+            k3 = self.dynamics(s + h / 2 * k2)
+            k4 = self.dynamics(s + h * k3)
+            s = s + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        self.state = s
+        return s.copy()
+
+    def positions(self):
+        """Trả về tọa độ (x1,y1) và (x2,y2) của 2 quả cầu."""
+        t1, _, t2, _ = self.state
+        x1 = self.l1 * np.sin(t1)
+        y1 = -self.l1 * np.cos(t1)
+        x2 = x1 + self.l2 * np.sin(t2)
+        y2 = y1 - self.l2 * np.cos(t2)
+        return (x1, y1), (x2, y2)
+
+    def energy(self) -> float:
+        """Tổng năng lượng - dùng để kiểm tra bảo toàn (unit test)."""
+        t1, w1, t2, w2 = self.state
+        T = 0.5 * self.m1 * (self.l1 * w1) ** 2
+        T += 0.5 * self.m2 * (
+            (self.l1 * w1) ** 2 + (self.l2 * w2) ** 2
+            + 2 * self.l1 * self.l2 * w1 * w2 * np.cos(t1 - t2)
+        )
+        V = -(self.m1 + self.m2) * self.g * self.l1 * np.cos(t1)
+        V -= self.m2 * self.g * self.l2 * np.cos(t2)
+        return T + V
